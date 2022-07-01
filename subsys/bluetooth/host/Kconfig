@@ -334,6 +334,12 @@ config BT_RPA_TIMEOUT
 	  This option defines how often resolvable private address is rotated.
 	  Value is provided in seconds and defaults to 900 seconds (15 minutes).
 
+config BT_RPA_TIMEOUT_DYNAMIC
+	bool "Set the Resolvable Private Address timeout in runtime"
+	help
+	  This option enables allows the user to override the default value
+	  of the Resolvable Private Address timeout using dedicated APIs.
+
 config BT_SIGNING
 	bool "Data signing support"
 	help

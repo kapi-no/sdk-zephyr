@@ -86,6 +86,7 @@ struct bt_dev bt_dev = {
 	.ncmd_sem      = Z_SEM_INITIALIZER(bt_dev.ncmd_sem, 0, 1),
 #endif
 	.cmd_tx_queue  = Z_FIFO_INITIALIZER(bt_dev.cmd_tx_queue),
+	.rpa_timeout = CONFIG_BT_RPA_TIMEOUT,
 #if defined(CONFIG_BT_DEVICE_APPEARANCE_DYNAMIC)
 	.appearance = CONFIG_BT_DEVICE_APPEARANCE,
 #endif
@@ -2980,7 +2981,7 @@ static int le_init(void)
 		}
 
 		cp = net_buf_add(buf, sizeof(*cp));
-		cp->rpa_timeout = sys_cpu_to_le16(CONFIG_BT_RPA_TIMEOUT);
+		cp->rpa_timeout = sys_cpu_to_le16(bt_dev.rpa_timeout);
 		err = bt_hci_cmd_send_sync(BT_HCI_OP_LE_SET_RPA_TIMEOUT, buf,
 					   NULL);
 		if (err) {
@@ -3935,6 +3936,24 @@ int bt_le_set_chan_map(uint8_t chan_map[5])
 	return bt_hci_cmd_send_sync(BT_HCI_OP_LE_SET_HOST_CHAN_CLASSIF,
 				    buf, NULL);
 }
+
+#if defined(CONFIG_BT_RPA_TIMEOUT_DYNAMIC)
+int bt_le_set_rpa_timeout(uint16_t new_rpa_timeout)
+{
+	if ((new_rpa_timeout == 0) || (new_rpa_timeout > 3600)) {
+		return -EINVAL;
+	}
+
+	if (new_rpa_timeout == bt_dev.rpa_timeout) {
+		return -EALREADY;
+	}
+
+	bt_dev.rpa_timeout = new_rpa_timeout;
+	atomic_set_bit(bt_dev.flags, BT_DEV_RPA_CHANGED);
+
+	return 0;
+}
+#endif
 
 void bt_data_parse(struct net_buf_simple *ad,
 		   bool (*func)(struct bt_data *data, void *user_data),
