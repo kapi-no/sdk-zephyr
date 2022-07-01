@@ -349,6 +349,7 @@ static void adv_disable_rpa(struct bt_le_ext_adv *adv, void *data)
 {
 	uint8_t adv_index = bt_le_ext_adv_get_index(adv);
 	bool *adv_disabled = data;
+	bool rpa_invalid = true;
 
 	adv_disabled[adv_index] = false;
 
@@ -365,6 +366,15 @@ static void adv_disable_rpa(struct bt_le_ext_adv *adv, void *data)
 		bt_le_adv_set_enable_ext(adv, false, NULL);
 
 		adv_disabled[adv_index] = true;
+	}
+
+	/* Notify the user about the RPA timeout and set the RPA validity. */
+	if (adv->cb && adv->cb->rpa_timed_out) {
+		rpa_invalid = adv->cb->rpa_timed_out(adv);
+	}
+
+	if (!rpa_invalid) {
+		atomic_set_bit(adv->flags, BT_ADV_RPA_VALID);
 	}
 }
 
@@ -399,6 +409,12 @@ static void le_update_private_addr(void)
 		bool adv_disabled[CONFIG_BT_EXT_ADV_MAX_ADV_SET];
 
 		bt_le_ext_adv_foreach(adv_disable_rpa, adv_disabled);
+
+		/* Submit the timeout in case all sets use the same
+		 * RPA for the next rotation period.
+		 */
+		le_rpa_timeout_submit();
+
 		bt_le_ext_adv_foreach(adv_update_rpa, adv_disabled);
 	} else {
 		le_rpa_invalidate();
