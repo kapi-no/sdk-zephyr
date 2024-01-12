@@ -129,6 +129,11 @@ static uint16_t bt_att_mtu(struct bt_att_chan *chan)
 	return MIN(chan->chan.rx.mtu, chan->chan.tx.mtu);
 }
 
+/* Descriptor of application-specific authorization callbacks that are used
+ * with the CONFIG_BT_GATT_AUTHORIZATION_CUSTOM Kconfig enabled.
+ */
+const static struct bt_gatt_authorization_cb *authorization_cb;
+
 /* ATT connection specific data */
 struct bt_att {
 	struct bt_conn		*conn;
@@ -1345,6 +1350,20 @@ struct read_type_data {
 typedef bool (*attr_read_cb)(struct net_buf *buf, ssize_t read,
 			     void *user_data);
 
+static bool attr_read_authorize(struct bt_conn *conn,
+				const struct bt_gatt_attr *attr)
+{
+	if (!IS_ENABLED(CONFIG_BT_GATT_AUTHORIZATION_CUSTOM)) {
+		return true;
+	}
+
+	if (!authorization_cb || !authorization_cb->read_operation_authorize) {
+		return true;
+	}
+
+	return authorization_cb->read_operation_authorize(conn, attr);
+}
+
 static bool attr_read_type_cb(struct net_buf *frag, ssize_t read,
 			      void *user_data)
 {
@@ -1451,6 +1470,12 @@ static uint8_t read_type_cb(const struct bt_gatt_attr *attr, uint16_t handle,
 		if (data->rsp->len) {
 			data->err = 0x00;
 		}
+		return BT_GATT_ITER_STOP;
+	}
+
+	/* Check the attribute authorization logic */
+	if (!attr_read_authorize(conn, attr)) {
+		data->err = BT_ATT_ERR_AUTHORIZATION;
 		return BT_GATT_ITER_STOP;
 	}
 
@@ -1579,6 +1604,12 @@ static uint8_t read_cb(const struct bt_gatt_attr *attr, uint16_t handle,
 	/* Check attribute permissions */
 	data->err = bt_gatt_check_perm(conn, attr, BT_GATT_PERM_READ_MASK);
 	if (data->err) {
+		return BT_GATT_ITER_STOP;
+	}
+
+	/* Check the attribute authorization logic */
+	if (!attr_read_authorize(conn, attr)) {
+		data->err = BT_ATT_ERR_AUTHORIZATION;
 		return BT_GATT_ITER_STOP;
 	}
 
@@ -1746,6 +1777,12 @@ static uint8_t read_vl_cb(const struct bt_gatt_attr *attr, uint16_t handle,
 	/* Check attribute permissions */
 	data->err = bt_gatt_check_perm(conn, attr, BT_GATT_PERM_READ_MASK);
 	if (data->err) {
+		return BT_GATT_ITER_STOP;
+	}
+
+	/* Check the attribute authorization logic */
+	if (!attr_read_authorize(conn, attr)) {
+		data->err = BT_ATT_ERR_AUTHORIZATION;
 		return BT_GATT_ITER_STOP;
 	}
 
@@ -1996,6 +2033,20 @@ struct write_data {
 	uint8_t err;
 };
 
+static bool attr_write_authorize(struct bt_conn *conn,
+				 const struct bt_gatt_attr *attr)
+{
+	if (!IS_ENABLED(CONFIG_BT_GATT_AUTHORIZATION_CUSTOM)) {
+		return true;
+	}
+
+	if (!authorization_cb || !authorization_cb->write_operation_authorize) {
+		return true;
+	}
+
+	return authorization_cb->write_operation_authorize(conn, attr);
+}
+
 static uint8_t write_cb(const struct bt_gatt_attr *attr, uint16_t handle,
 			void *user_data)
 {
@@ -2009,6 +2060,12 @@ static uint8_t write_cb(const struct bt_gatt_attr *attr, uint16_t handle,
 	data->err = bt_gatt_check_perm(data->conn, attr,
 				       BT_GATT_PERM_WRITE_MASK);
 	if (data->err) {
+		return BT_GATT_ITER_STOP;
+	}
+
+	/* Check the attribute authorization logic */
+	if (!attr_write_authorize(data->conn, attr)) {
+		data->err = BT_ATT_ERR_AUTHORIZATION;
 		return BT_GATT_ITER_STOP;
 	}
 
@@ -2122,6 +2179,12 @@ static uint8_t prep_write_cb(const struct bt_gatt_attr *attr, uint16_t handle,
 	data->err = bt_gatt_check_perm(data->conn, attr,
 				       BT_GATT_PERM_WRITE_MASK);
 	if (data->err) {
+		return BT_GATT_ITER_STOP;
+	}
+
+	/* Check the attribute authorization logic */
+	if (!attr_write_authorize(data->conn, attr)) {
+		data->err = BT_ATT_ERR_AUTHORIZATION;
 		return BT_GATT_ITER_STOP;
 	}
 
@@ -4054,4 +4117,24 @@ bool bt_att_chan_opt_valid(struct bt_conn *conn, enum bt_att_chan_opt chan_opt)
 	}
 
 	return true;
+}
+
+int bt_gatt_authorization_cb_register(const struct bt_gatt_authorization_cb *cb)
+{
+	if (!IS_ENABLED(CONFIG_BT_GATT_AUTHORIZATION_CUSTOM)) {
+		return -ENOSYS;
+	}
+
+	if (!cb) {
+		authorization_cb = NULL;
+		return 0;
+	}
+
+	if (authorization_cb) {
+		return -EALREADY;
+	}
+
+	authorization_cb = cb;
+
+	return 0;
 }
