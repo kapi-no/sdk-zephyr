@@ -194,6 +194,12 @@ struct control_message {
 
 BUILD_ASSERT(NUM_EPT <= EPT_ADDR_INVALID, "Too many endpoints");
 
+#define MY_PRIORITY -1
+#define MY_STACK_SIZE (CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE)
+
+K_THREAD_STACK_DEFINE(my_stack_area, MY_STACK_SIZE);
+struct k_work_q my_work_q;
+
 /**
  * Calculate pointer to block from its index and channel configuration (RX or TX).
  * No validation is performed.
@@ -672,7 +678,7 @@ static int send_bound_message(struct backend_data *dev_data, struct ept_data *ep
  */
 static void schedule_ept_bound_process(struct backend_data *dev_data)
 {
-	k_work_submit(&dev_data->ep_bound_work);
+	k_work_submit_to_queue(&my_work_q, &dev_data->ep_bound_work);
 }
 
 /**
@@ -1117,6 +1123,11 @@ static int backend_init(const struct device *instance)
 {
 	const struct icbmsg_config *conf = instance->config;
 	struct backend_data *dev_data = instance->data;
+
+	k_work_queue_init(&my_work_q);
+	k_work_queue_start(&my_work_q, my_stack_area,
+			K_THREAD_STACK_SIZEOF(my_stack_area), MY_PRIORITY,
+			NULL);
 
 	dev_data->conf = conf;
 	dev_data->is_initiator = (conf->rx.blocks_ptr < conf->tx.blocks_ptr);
